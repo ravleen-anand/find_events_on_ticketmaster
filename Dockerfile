@@ -8,4 +8,4 @@ RUN pip install -r requirements_dev.txt
 
 COPY app.py /usr/src/app
 
-CMD uvicorn app --reload
+CMD uvicorn --reload app:app

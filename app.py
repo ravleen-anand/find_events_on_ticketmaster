@@ -1,16 +1,7 @@
-"""Web request handler and supporting components
-
-These components include error handling, authorization, CORS,
-logging, etc.
-"""
-
-import sys
-import traceback
 from typing import List
-
 import requests
 from fastapi import FastAPI, Query
-from pydantic import AnyHttpUrl, BaseModel, ValidationError
+from pydantic import AnyHttpUrl, BaseModel
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -38,13 +29,7 @@ class Event(BaseModel):
 
 class OutputModel(BaseModel):
     links: Links
-    events: List[Event]
-
-
-@app.get('/health_check', status_code=200, include_in_schema=False)
-async def health_check():
-    """Check health of the API"""
-    return {'status': 'pass'}
+    events: List[Event] = None
 
 
 def get_events_from_ticketmaster(api_key: str, city: str, postal_code: str = None) -> requests.Response:
@@ -55,11 +40,9 @@ def get_events_from_ticketmaster(api_key: str, city: str, postal_code: str = Non
 
 
 def construct_response(request: Request, resp_json):
-    return OutputModel(
-        links={
-            'self': str(request.url)
-        },
-        events=[
+    events = None
+    if resp_json.get('_embedded'):
+        events = [
             {
                 'name': event.get('name'),
                 'id': event.get('id'),
@@ -67,6 +50,11 @@ def construct_response(request: Request, resp_json):
             }
             for event in resp_json['_embedded']['events']
         ]
+    return OutputModel(
+        links={
+            'self': str(request.url)
+        },
+        events=events
     )
 
 
@@ -75,13 +63,14 @@ def construct_response(request: Request, resp_json):
     response_model=OutputModel,
     responses={
         401: {
-            'description': 'Invalid APIKey',
+            'description': 'Invalid API Key',
             'content': {
                 'application/json': {
                     'example': {
-                        'detail': [{
-                            'msg': 'string'
-                        }],
+                        'faultstring':'string',
+                        'detail': {
+                            'errorcode': 'string'
+                        },
                     },
                 },
             },
@@ -113,26 +102,22 @@ async def get_city_events(
 
             ),
         ),
+        search_id: int = Query(
+            None,
+            title='Search Id Query Parameter',
+            description=(
+                    'Id of the search performed. '
+                    'This is used to demo ValidationError'
+
+            ),
+        ),
 ):
     """Get the details of the events taking place in a particular city
     """
     resp = get_events_from_ticketmaster(api_key, city, postal_code)
+    if resp.status_code == 401:
+        return JSONResponse(status_code=401, content=resp.json().get('fault'))
     return construct_response(request, resp.json())
-
-
-def log(msg):
-    print(msg)
-    sys.stdout.flush()
-
-
-@app.exception_handler(ValidationError)
-async def handle_central_exception(
-        request: Request, exc: ValidationError
-) -> JSONResponse:
-    """Returns JSON error response for ValidationError"""
-    log(str(exc))
-    traceback.print_exc()
-    return JSONResponse({'detail': [{'msg': str(exc)}]}, status_code=422)
 
 
 if __name__ == '__main__':
