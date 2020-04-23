@@ -27,40 +27,14 @@ class Event(BaseModel):
     url: str = None
 
 
-class OutputModel(BaseModel):
+class ResponseModel(BaseModel):
     links: Links
     events: List[Event] = None
 
 
-def get_events_from_ticketmaster(api_key: str, city: str, postal_code: str = None) -> requests.Response:
-    url = f'https://app.ticketmaster.com/discovery/v2/events.json?apikey={api_key}&city={city}'
-    if postal_code:
-        url = f'{url}&postalCode={postal_code}'
-    return requests.get(url)
-
-
-def construct_response(request: Request, resp_json):
-    events = None
-    if resp_json.get('_embedded'):
-        events = [
-            {
-                'name': event.get('name'),
-                'id': event.get('id'),
-                'url': event.get('url'),
-            }
-            for event in resp_json['_embedded']['events']
-        ]
-    return OutputModel(
-        links={
-            'self': str(request.url)
-        },
-        events=events
-    )
-
-
 @app.get(
     '/city_events/',
-    response_model=OutputModel,
+    response_model=ResponseModel,
     responses={
         401: {
             'description': 'Invalid API Key',
@@ -118,6 +92,32 @@ async def get_city_events(
     if resp.status_code == 401:
         return JSONResponse(status_code=401, content=resp.json().get('fault'))
     return construct_response(request, resp.json())
+
+
+def get_events_from_ticketmaster(api_key: str, city: str, postal_code: str = None) -> requests.Response:
+    url = f'https://app.ticketmaster.com/discovery/v2/events.json?apikey={api_key}&city={city}'
+    if postal_code:
+        url = f'{url}&postalCode={postal_code}'
+    return requests.get(url)
+
+
+def construct_response(request: Request, resp_json):
+    events = None
+    if resp_json.get('_embedded'):
+        events = [
+            {
+                'name': event.get('name'),
+                'id': event.get('id'),
+                'url': event.get('url'),
+            }
+            for event in resp_json['_embedded']['events']
+        ]
+    return ResponseModel(
+        links={
+            'self': str(request.url)
+        },
+        events=events
+    )
 
 
 if __name__ == '__main__':
